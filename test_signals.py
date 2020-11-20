@@ -17,7 +17,7 @@ signal = dispatch.Signal()
 
 receivers = []
 
-for i in range(100):
+for i in range(RECEIVERS_COUNT):
     r = Receiver()
     receivers.append(r)
     signal.connect(r)
