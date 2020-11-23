@@ -2,11 +2,19 @@ import asyncio
 import os
 import timeit
 
+import asgiref
 import django
 from django.core.asgi import get_asgi_application
+try:
+    from django_websockets2.asgi_handler import \
+        get_asgi_application as get_fast_asgi_application
+except ImportError:
+    get_fast_asgi_application = None
 
 
 REPEAT_COUNT = 10000
+FAST_ASGI = False
+ASYNC_VIEW = True
 
 os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'app.settings')
 
@@ -31,12 +39,15 @@ class Context:
 
 class Executor:
     def __init__(self):
-        self.app = get_asgi_application()
+        if FAST_ASGI:
+            self.app = get_fast_asgi_application()
+        else:
+            self.app = get_asgi_application()
 
     def __call__(self):
         scope = {
             'type': 'http',
-            'path': '/sync/',
+            'path': '/async/' if ASYNC_VIEW else '/sync/',
             'method': 'GET',
         }
         response = Context()
@@ -48,4 +59,5 @@ class Executor:
 executor = Executor()
 
 print(django.VERSION)
+print(asgiref.__file__)
 print(timeit.timeit(executor, number=REPEAT_COUNT))
