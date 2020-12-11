@@ -1,11 +1,18 @@
 import asyncio
+import collections
 import logging
 import os
 import time
 import multiprocessing
-from utils import protocol
+
+import asgiref
+import django
 from django.core.wsgi import get_wsgi_application
 from django.core.asgi import get_asgi_application
+
+from utils import protocol
+from app import app as test_app
+
 try:
     from django_websockets2.asgi_handler import \
         get_asgi_application as get_fast_asgi_application
@@ -32,7 +39,7 @@ ns = 1000000000
 os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'app.settings')
 
 
-def server_func(server_started):
+def server_func(server_started, server_stopped):
     if ASGI:
         app_class = protocol.ASGIApp
         if FAST_ASGI:
@@ -51,12 +58,24 @@ def server_func(server_started):
         host=HOST, port=PORT,
         protocol_factory=lambda: protocol.ServerProtocol(app, loop=loop))
     server = loop.run_until_complete(create_server)
+
+    def stop_signal(server):
+        server_stopped.wait()
+        server.close()
+    loop.run_in_executor(None, stop_signal, server)
     print(f'Server started on {HOST}:{PORT}...')
     server_started.set()
     try:
         loop.run_until_complete(server.serve_forever())
+    except asyncio.CancelledError:
+        pass
     finally:
-        print('Server stopped.')
+        value = 0
+        for r in test_app.receivers:
+            value += r.value
+        print(f'Calls count: {value}')
+        counter = collections.Counter([r.value for r in test_app.receivers])
+        print(counter)
 
 
 async def client_task():
@@ -108,10 +127,13 @@ def main():
             implementation = 'WSGI (multi threaded)'
     print(f'====== {implementation} PARALLEL: {PARALLEL} COUNT: {REPEAT_COUNT}'
           f' SYNC_VIEW: {SYNC_VIEW} ========')
+    print(f'Django version: {".".join(map(str, django.VERSION))}')
+    print(f'asgiref: {asgiref.__file__}')
     print('Creating server...')
     server_started = multiprocessing.Event()
+    server_stopped = multiprocessing.Event()
     process = multiprocessing.Process(
-        target=server_func, args=(server_started,))
+        target=server_func, args=(server_started, server_stopped))
     process.start()
     server_started.wait()
     print('Starting client')
@@ -125,11 +147,13 @@ def main():
     loop.run_until_complete(asyncio.wait(tasks))
     print('====== Requests finished. ======')
     print_status()
-    process.terminate()
+    total_time = time.perf_counter_ns() - start_time
+    server_stopped.set()
+    process.join()
     for task in tasks:
         task.result()  # may raise
     print('Timing:')
-    print(request_time / ns)
+    print(total_time / ns)
 
 
 if __name__ == '__main__':

@@ -72,12 +72,14 @@ class WSGIApp(BaseApp):
             None,
             functools.partial(
                 self.handler, self.get_environ(body), self._start_response))
+        response.close()
         return response.status_code, response.content
 
 
 class WSGISingleThreadApp(WSGIApp):
     async def __call__(self, body):
         response = self.handler(self.get_environ(body), self._start_response)
+        response.close()
         return response.status_code, response.content
 
 
