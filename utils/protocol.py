@@ -1,5 +1,6 @@
 import asyncio
 import functools
+import logging
 
 
 class ServerProtocol(asyncio.StreamReaderProtocol):
@@ -14,7 +15,12 @@ class ServerProtocol(asyncio.StreamReaderProtocol):
             data = await stream_reader.readline()
             if not data:
                 break
-            status_code, body = await self.app(data.strip())
+            try:
+                status_code, body = await self.app(data.strip())
+            except Exception as e:
+                logging.exception(e)
+                status_code = 500
+                body = str(e).encode('utf8')
             stream_writer.write(f'{status_code} '.encode('utf8') + body + b'\n')
             await stream_writer.drain()
         stream_writer.close()
